@@ -39,11 +39,14 @@ class MainWindow(QMainWindow):
         central.setObjectName("central")
         self.setCentralWidget(central)
 
-        background_path = os.path.join(ASSETS_DIR, "background_usc.svg")
-        central.setStyleSheet(
+        background_path = os.path.join(ASSETS_DIR, "background_usc.svg")  # CHANGED
+        background_rule = ""  # CHANGED
+        if os.path.exists(background_path):  # CHANGED
+            background_rule = f'background-image: url("{background_path}");'  # CHANGED
+        central.setStyleSheet(  # CHANGED
             f"""
             QWidget#central {{
-                background-image: url("{background_path}");
+                {background_rule}
                 background-position: center;
                 background-repeat: no-repeat;
                 background-color: #0b1221;
@@ -55,9 +58,18 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700;")
         title.setAlignment(Qt.AlignCenter)
 
-        robot_label = QLabel()
-        robot_pixmap = QPixmap(os.path.join(ASSETS_DIR, "robot_racket.svg"))
-        robot_label.setPixmap(robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        robot_label = QLabel()  # CHANGED
+        robot_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
+        robot_pixmap = QPixmap()  # CHANGED
+        if os.path.exists(robot_path):  # CHANGED
+            robot_pixmap.load(robot_path)  # CHANGED
+        if robot_pixmap.isNull():  # CHANGED
+            robot_label.setText("USC Padel Booking")  # CHANGED
+            robot_label.setStyleSheet("color: #ffffff; font-size: 16px;")  # CHANGED
+        else:  # CHANGED
+            robot_label.setPixmap(  # CHANGED
+                robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # CHANGED
+            )  # CHANGED
         robot_label.setAlignment(Qt.AlignCenter)
 
         self.run_background_checkbox = QCheckBox("Run in background")
@@ -90,8 +102,9 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(content_layout)
 
     def _init_tray(self) -> None:
-        icon_path = os.path.join(ASSETS_DIR, "robot_racket.svg")
-        self.tray_icon = QSystemTrayIcon(QIcon(icon_path), self)
+        icon_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
+        tray_icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()  # CHANGED
+        self.tray_icon = QSystemTrayIcon(tray_icon, self)  # CHANGED
         self.tray_icon.setToolTip("USC Padel Booking")
 
         self.tray_menu = QMenu()
@@ -161,10 +174,13 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    app = QApplication(sys.argv)  # CHANGED
+    app.setQuitOnLastWindowClosed(True)  # CHANGED
+    window = MainWindow()  # CHANGED
+    window.show()  # CHANGED
+    window.raise_()  # CHANGED
+    window.activateWindow()  # CHANGED
+    sys.exit(app.exec())  # CHANGED
 
 
 if __name__ == "__main__":
