@@ -9,14 +9,21 @@ DEFAULT_SLOTS = [
 ]
 
 
-def load_schedule() -> List[Dict[str, str]]:
+def _load_payload() -> Dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        return list(DEFAULT_SLOTS)
+        return {}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
     except (OSError, json.JSONDecodeError):
-        return list(DEFAULT_SLOTS)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def load_schedule() -> List[Dict[str, str]]:
+    payload = _load_payload()
     slots = payload.get("slots")
     if not isinstance(slots, list):
         return list(DEFAULT_SLOTS)
@@ -34,7 +41,22 @@ def load_schedule() -> List[Dict[str, str]]:
 
 
 def save_schedule(slots: List[Dict[str, str]]) -> None:
-    payload: Dict[str, Any] = {"slots": slots}
+    payload: Dict[str, Any] = _load_payload()
+    payload["slots"] = slots
+    with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+
+
+def load_preferences() -> Dict[str, bool]:
+    payload = _load_payload()
+    run_in_background = payload.get("run_in_background")
+    return {"run_in_background": run_in_background is True}
+
+
+def save_preferences(preferences: Dict[str, bool]) -> None:
+    payload: Dict[str, Any] = _load_payload()
+    payload["run_in_background"] = preferences.get("run_in_background") is True
     with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")

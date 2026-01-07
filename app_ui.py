@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from booking_config import load_schedule, save_schedule
+from booking_config import load_preferences, load_schedule, save_preferences, save_schedule
 from booking_scheduler import BookingScheduler
 
 
@@ -83,6 +83,10 @@ class MainWindow(QMainWindow):
 
         self.run_background_checkbox = QCheckBox("Run in background")
         self.run_background_checkbox.setStyleSheet("color: #ffffff; font-size: 16px;")
+        self.run_background_checkbox.setChecked(
+            load_preferences().get("run_in_background", False)
+        )
+        self.run_background_checkbox.stateChanged.connect(self._save_background_preference)
 
         self.start_stop_button = QPushButton("Start booking")
         self.start_stop_button.setFixedWidth(200)
@@ -186,6 +190,9 @@ class MainWindow(QMainWindow):
                 self.scheduler.start(email, password)
             except ValueError as exc:
                 QMessageBox.warning(self, "Missing credentials", str(exc))
+            else:
+                if self.run_background_checkbox.isChecked():
+                    self._hide_to_tray(show_message=True)
         self._update_ui()
 
     def _get_credentials(self) -> tuple[str, str]:
@@ -280,6 +287,19 @@ class MainWindow(QMainWindow):
             slots = load_schedule()
         save_schedule(slots)
 
+    def _save_background_preference(self) -> None:
+        save_preferences({"run_in_background": self.run_background_checkbox.isChecked()})
+
+    def _hide_to_tray(self, show_message: bool = False) -> None:
+        self.hide()
+        if show_message and QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray_icon.showMessage(
+                "USC Padel Booking",
+                "App is still running in the background.",
+                QSystemTrayIcon.Information,
+                2000,
+            )
+
     def _show_window(self) -> None:
         self.showNormal()
         self.raise_()
@@ -299,13 +319,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         if self.run_background_checkbox.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
             event.ignore()
-            self.hide()
-            self.tray_icon.showMessage(
-                "USC Padel Booking",
-                "App is still running in the background.",
-                QSystemTrayIcon.Information,
-                2000,
-            )
+            self._hide_to_tray(show_message=True)
             return
         self.scheduler.stop()
         event.accept()
@@ -313,7 +327,7 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)  # CHANGED
-    app.setQuitOnLastWindowClosed(True)  # CHANGED
+    app.setQuitOnLastWindowClosed(False)  # CHANGED
     window = MainWindow()  # CHANGED
     window.show()  # CHANGED
     window.raise_()  # CHANGED
