@@ -2,11 +2,12 @@ import os
 import sys
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -44,39 +45,37 @@ class MainWindow(QMainWindow):
     def _init_ui(self) -> None:
         central = QWidget()
         central.setObjectName("central")
+        central.setAutoFillBackground(True)
+        palette = central.palette()
+        palette.setColor(QPalette.Window, QColor("#0b1221"))
+        central.setPalette(palette)
         self.setCentralWidget(central)
 
-        background_path = os.path.join(ASSETS_DIR, "background_usc.svg")  # CHANGED
-        background_rule = ""  # CHANGED
-        if os.path.exists(background_path):  # CHANGED
-            background_rule = f'background-image: url("{background_path}");'  # CHANGED
-        central.setStyleSheet(  # CHANGED
-            f"""
-            QWidget#central {{
-                {background_rule}
-                background-position: center;
-                background-repeat: no-repeat;
-                background-color: #0b1221;
-            }}
-            """
-        )
+        self.background_label = QLabel(central)
+        self.background_label.setAlignment(Qt.AlignCenter)
+        self.background_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self._background_pixmap = QPixmap()
+        background_path = self._asset_path("background_usc.svg")
+        if os.path.exists(background_path):
+            self._background_pixmap.load(background_path)
 
         title = QLabel("USC Padel Booking Controller")
         title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700;")
         title.setAlignment(Qt.AlignCenter)
 
-        robot_label = QLabel()  # CHANGED
-        robot_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
-        robot_pixmap = QPixmap()  # CHANGED
-        if os.path.exists(robot_path):  # CHANGED
-            robot_pixmap.load(robot_path)  # CHANGED
-        if robot_pixmap.isNull():  # CHANGED
-            robot_label.setText("USC Padel Booking")  # CHANGED
-            robot_label.setStyleSheet("color: #ffffff; font-size: 16px;")  # CHANGED
-        else:  # CHANGED
-            robot_label.setPixmap(  # CHANGED
-                robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # CHANGED
-            )  # CHANGED
+        robot_label = QLabel()
+        robot_path = self._asset_path("robot_racket.svg")
+        robot_pixmap = QPixmap()
+        if os.path.exists(robot_path):
+            robot_pixmap.load(robot_path)
+        if robot_pixmap.isNull():
+            robot_label.setText("USC Padel Booking")
+            robot_label.setStyleSheet("color: #ffffff; font-size: 16px;")
+        else:
+            robot_label.setPixmap(
+                robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
         robot_label.setAlignment(Qt.AlignCenter)
 
         self.run_background_checkbox = QCheckBox("Run in background")
@@ -134,17 +133,28 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(controls_layout, stretch=1)
         content_layout.setContentsMargins(40, 20, 40, 40)
 
-        main_layout = QVBoxLayout(central)
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
         main_layout.addWidget(title)
         main_layout.addLayout(content_layout)
         main_layout.addWidget(schedule_group)
 
+        overlay_layout = QGridLayout(central)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.addWidget(self.background_label, 0, 0)
+        overlay_layout.addWidget(content_widget, 0, 0)
+
+        self._update_background_pixmap()
         self._load_schedule()
 
     def _init_tray(self) -> None:
-        icon_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
-        tray_icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()  # CHANGED
-        self.tray_icon = QSystemTrayIcon(tray_icon, self)  # CHANGED
+        icon_path = self._asset_path("racket.svg")
+        if not os.path.exists(icon_path):
+            icon_path = self._asset_path("racket.png")
+        if not os.path.exists(icon_path):
+            icon_path = self._asset_path("robot_racket.svg")
+        tray_icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        self.tray_icon = QSystemTrayIcon(tray_icon, self)
         self.tray_icon.setToolTip("USC Padel Booking")
 
         self.tray_menu = QMenu()
@@ -251,6 +261,26 @@ class MainWindow(QMainWindow):
                 self.hide()
             else:
                 self._show_window()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_background_pixmap()
+
+    def _asset_path(self, filename: str) -> str:
+        return os.path.abspath(os.path.join(ASSETS_DIR, filename))
+
+    def _update_background_pixmap(self) -> None:
+        if self._background_pixmap.isNull():
+            self.background_label.clear()
+            return
+        target_size = self.centralWidget().size()
+        scaled = self._background_pixmap.scaled(
+            target_size,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        self.background_label.setPixmap(scaled)
+        self.background_label.setMinimumSize(target_size)
 
     def closeEvent(self, event) -> None:
         if self.run_background_checkbox.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
