@@ -13,12 +13,18 @@ from webdriver_manager.chrome import ChromeDriverManager
 WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
-def fill_form(target_time: str) -> None:
+def fill_form(target_time: str, stop_event: threading.Event) -> None:
     # Setup the WebDriver
     options = webdriver.ChromeOptions()
     options.headless = False
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.maximize_window()
+
+    def check_stop() -> bool:
+        if stop_event.is_set():
+            driver.quit()
+            return True
+        return False
 
     # Timestamp
     print(f"Start login: {datetime.now()}")
@@ -26,6 +32,8 @@ def fill_form(target_time: str) -> None:
     # Open the webpage
     driver.get("https://my.uscsport.nl/pages/login")
 
+    if check_stop():
+        return
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "showEmailLoginButton"))
     )
@@ -33,6 +41,8 @@ def fill_form(target_time: str) -> None:
     login_button = driver.find_element(By.ID, "showEmailLoginButton")
     login_button.click()
 
+    if check_stop():
+        return
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "email"))
     )
@@ -46,6 +56,8 @@ def fill_form(target_time: str) -> None:
     submit_button.click()
 
     # Wait for search category to load
+    if check_stop():
+        return
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "tag-filterinput"))
     )
@@ -56,6 +68,8 @@ def fill_form(target_time: str) -> None:
     search_button.send_keys("Padel")
 
     # Wait for the padel category to load
+    if check_stop():
+        return
     WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.ID, "tagCheckbox193"))
     )
@@ -76,6 +90,8 @@ def fill_form(target_time: str) -> None:
     ]
 
     while True:
+        if check_stop():
+            return
         # If booking opens
         if datetime.now().strftime("%H:%M:%S") == target_time:
             # Refresh
@@ -88,6 +104,8 @@ def fill_form(target_time: str) -> None:
             print(f"Start booking: {datetime.now()}")
 
             # Wait for correct date to appear and click it
+            if check_stop():
+                return
             WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, '[data-test-id="day-button"][data-test-id-day-button-number="0"]')
@@ -96,6 +114,8 @@ def fill_form(target_time: str) -> None:
             driver.find_element(By.CSS_SELECTOR, target_day_button).click()
 
             # List all reserve buttons and save last one
+            if check_stop():
+                return
             WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '[data-test-id="bookable-slot-book-button"]'))
             )
@@ -104,6 +124,8 @@ def fill_form(target_time: str) -> None:
             last_button.click()
 
             # Scroll pop-up window to the bottom
+            if check_stop():
+                return
             WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '[data-test-id="details-book-button"]'))
             )
@@ -124,6 +146,8 @@ def fill_form(target_time: str) -> None:
 
             # Locate and click the book button
             book_button = driver.find_element(By.CSS_SELECTOR, '[data-test-id="details-book-button"]')
+            if check_stop():
+                return
             WebDriverWait(driver, 3).until(EC.element_to_be_clickable(book_button))
             book_button.click()
 
@@ -136,6 +160,8 @@ def fill_form(target_time: str) -> None:
             print(f"Booked {WEEKDAY_CONVERT[weekday]} {day_str} at {target_time}")
 
             # Wait for booking to be finished
+            if check_stop():
+                return
             time.sleep(10)
 
             # Close the browser, stop current run
@@ -143,6 +169,8 @@ def fill_form(target_time: str) -> None:
             break
 
         # Refresh often to check if booking opens
+        if check_stop():
+            return
         time.sleep(0.01)
 
 
@@ -157,8 +185,8 @@ class BookingScheduler:
             return
         self._stop_event.clear()
         schedule.clear()
-        schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00"))
-        schedule.every().friday.at("19:59:00").do(lambda: fill_form("20:00:00"))
+        schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
+        schedule.every().friday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._running = True
         self._thread.start()
