@@ -1,8 +1,8 @@
 import os
 import sys
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPixmap
+from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -33,12 +33,15 @@ HOUR_VALUES = [f"{hour:02d}:00" for hour in range(24)]
 
 
 class MainWindow(QMainWindow):
+    booking_completed = Signal(str, str)
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("USC Padel Booking")
         self.setMinimumSize(860, 540)
 
-        self.scheduler = BookingScheduler()
+        self.booking_completed.connect(self._handle_booking_complete)
+        self.scheduler = BookingScheduler(self.booking_completed.emit)
 
         self._init_ui()
         self._init_tray()
@@ -386,6 +389,19 @@ class MainWindow(QMainWindow):
             return
         self.scheduler.stop()
         event.accept()
+
+    @Slot(str, str)
+    def _handle_booking_complete(self, day: str, book_time: str) -> None:
+        message = f"Booked {day} slot at {book_time}."
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray_icon.showMessage(
+                "USC Padel Booking",
+                message,
+                QSystemTrayIcon.Information,
+                3000,
+            )
+        else:
+            QMessageBox.information(self, "USC Padel Booking", message)
 
 
 def main() -> None:
