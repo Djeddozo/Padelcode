@@ -6,20 +6,26 @@ from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QPushButton,
     QSystemTrayIcon,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from booking_config import load_schedule, save_schedule
 from booking_scheduler import BookingScheduler
 
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
+SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 class MainWindow(QMainWindow):
@@ -86,6 +92,36 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("color: #ffffff; font-size: 14px;")
         self.status_label.setAlignment(Qt.AlignCenter)
 
+        schedule_group = QGroupBox("Booking schedule")
+        schedule_group.setStyleSheet(
+            "QGroupBox { color: #ffffff; font-size: 16px; font-weight: 600; }"
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top center; }"
+        )
+        schedule_layout = QVBoxLayout(schedule_group)
+
+        self.schedule_table = QTableWidget(0, 3)
+        self.schedule_table.setHorizontalHeaderLabels(["Day", "Check time", "Book time"])
+        self.schedule_table.verticalHeader().setVisible(False)
+        self.schedule_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.schedule_table.setStyleSheet(
+            "QTableWidget { background-color: #ffffff; color: #111827; }"
+            "QHeaderView::section { background-color: #f2c94c; color: #111827; font-weight: 600; }"
+        )
+
+        schedule_button_row = QHBoxLayout()
+        self.add_schedule_button = QPushButton("Add slot")
+        self.remove_schedule_button = QPushButton("Remove selected")
+        self.save_schedule_button = QPushButton("Save schedule")
+        self.add_schedule_button.clicked.connect(self._add_schedule_row)
+        self.remove_schedule_button.clicked.connect(self._remove_schedule_rows)
+        self.save_schedule_button.clicked.connect(self._save_schedule)
+        schedule_button_row.addWidget(self.add_schedule_button)
+        schedule_button_row.addWidget(self.remove_schedule_button)
+        schedule_button_row.addWidget(self.save_schedule_button)
+
+        schedule_layout.addWidget(self.schedule_table)
+        schedule_layout.addLayout(schedule_button_row)
+
         controls_layout = QVBoxLayout()
         controls_layout.addWidget(self.run_background_checkbox, alignment=Qt.AlignCenter)
         controls_layout.addWidget(self.start_stop_button, alignment=Qt.AlignCenter)
@@ -100,6 +136,9 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.addWidget(title)
         main_layout.addLayout(content_layout)
+        main_layout.addWidget(schedule_group)
+
+        self._load_schedule()
 
     def _init_tray(self) -> None:
         icon_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
@@ -141,6 +180,57 @@ class MainWindow(QMainWindow):
         else:
             self.scheduler.start()
         self._update_ui()
+
+    def _load_schedule(self) -> None:
+        self.schedule_table.setRowCount(0)
+        for slot in load_schedule():
+            self._add_schedule_row(slot)
+
+    def _add_schedule_row(self, slot: dict | None = None) -> None:
+        row = self.schedule_table.rowCount()
+        self.schedule_table.insertRow(row)
+
+        day_combo = QComboBox()
+        day_combo.addItems(SCHEDULE_DAYS)
+        day_value = slot.get("day") if slot else SCHEDULE_DAYS[0]
+        if day_value in SCHEDULE_DAYS:
+            day_combo.setCurrentText(day_value)
+        self.schedule_table.setCellWidget(row, 0, day_combo)
+
+        check_time_edit = QLineEdit()
+        check_time_edit.setPlaceholderText("19:59:00")
+        check_time_edit.setText(slot.get("check_time") if slot else "")
+        self.schedule_table.setCellWidget(row, 1, check_time_edit)
+
+        book_time_edit = QLineEdit()
+        book_time_edit.setPlaceholderText("20:00:00")
+        book_time_edit.setText(slot.get("book_time") if slot else "")
+        self.schedule_table.setCellWidget(row, 2, book_time_edit)
+
+    def _remove_schedule_rows(self) -> None:
+        selected_rows = {index.row() for index in self.schedule_table.selectionModel().selectedRows()}
+        for row in sorted(selected_rows, reverse=True):
+            self.schedule_table.removeRow(row)
+
+    def _save_schedule(self) -> None:
+        slots: list[dict[str, str]] = []
+        for row in range(self.schedule_table.rowCount()):
+            day_combo = self.schedule_table.cellWidget(row, 0)
+            check_time_edit = self.schedule_table.cellWidget(row, 1)
+            book_time_edit = self.schedule_table.cellWidget(row, 2)
+            if not isinstance(day_combo, QComboBox):
+                continue
+            if not isinstance(check_time_edit, QLineEdit) or not isinstance(book_time_edit, QLineEdit):
+                continue
+            day = day_combo.currentText().strip()
+            check_time = check_time_edit.text().strip()
+            book_time = book_time_edit.text().strip()
+            if not day or not check_time or not book_time:
+                continue
+            slots.append({"day": day, "check_time": check_time, "book_time": book_time})
+        if not slots:
+            slots = load_schedule()
+        save_schedule(slots)
 
     def _show_window(self) -> None:
         self.showNormal()
