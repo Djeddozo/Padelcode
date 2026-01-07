@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -139,7 +140,10 @@ class MainWindow(QMainWindow):
         if self.scheduler.is_running():
             self.scheduler.stop()
         else:
-            self.scheduler.start()
+            try:
+                self.scheduler.start()
+            except ValueError as exc:
+                QMessageBox.warning(self, "Missing credentials", str(exc))
         self._update_ui()
 
     def _show_window(self) -> None:

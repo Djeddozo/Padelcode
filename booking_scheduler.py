@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -13,7 +14,20 @@ from webdriver_manager.chrome import ChromeDriverManager
 WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
+def get_credentials() -> tuple[str, str]:
+    email = os.environ.get("USC_EMAIL")
+    password = os.environ.get("USC_PASSWORD")
+    missing = [name for name, value in (("USC_EMAIL", email), ("USC_PASSWORD", password)) if not value]
+    if missing:
+        missing_vars = ", ".join(missing)
+        raise ValueError(
+            f"Missing credentials: {missing_vars}. Please set USC_EMAIL and USC_PASSWORD in the environment."
+        )
+    return email, password
+
+
 def fill_form(target_time: str) -> None:
+    email, password = get_credentials()
     # Setup the WebDriver
     options = webdriver.ChromeOptions()
     options.headless = False
@@ -39,9 +53,9 @@ def fill_form(target_time: str) -> None:
 
     # Log in by filling the fields and clicking login
     email_field = driver.find_element(By.ID, "email")
-    email_field.send_keys("thomas.m.jansz@gmail.com")
+    email_field.send_keys(email)
     email_field = driver.find_element(By.ID, "password")
-    email_field.send_keys("U%Z&nGwUtJw%mksC7FwL")
+    email_field.send_keys(password)
     submit_button = driver.find_element(By.ID, "submit")
     submit_button.click()
 
@@ -155,6 +169,7 @@ class BookingScheduler:
     def start(self) -> None:
         if self._running:
             return
+        get_credentials()
         self._stop_event.clear()
         schedule.clear()
         schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00"))
