@@ -1,3 +1,4 @@
+import os
 import time
 import schedule
 from datetime import datetime, timedelta
@@ -10,7 +11,21 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 weekday_convert = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
+
+def get_credentials():
+    email = os.environ.get("USC_EMAIL")
+    password = os.environ.get("USC_PASSWORD")
+    missing = [name for name, value in (("USC_EMAIL", email), ("USC_PASSWORD", password)) if not value]
+    if missing:
+        missing_vars = ", ".join(missing)
+        raise ValueError(
+            f"Missing credentials: {missing_vars}. Please set USC_EMAIL and USC_PASSWORD in the environment."
+        )
+    return email, password
+
 def fill_form(target_time):
+    email, password = get_credentials()
+
     # Setup the WebDriver
     options = webdriver.ChromeOptions()
     options.headless = False
@@ -37,9 +52,9 @@ def fill_form(target_time):
 
     # Log in by filling the fields and clicking login
     email_field = driver.find_element(By.ID, "email")
-    email_field.send_keys("thomas.m.jansz@gmail.com")
+    email_field.send_keys(email)
     email_field = driver.find_element(By.ID, "password")
-    email_field.send_keys("U%Z&nGwUtJw%mksC7FwL")
+    email_field.send_keys(password)
     submit_button = driver.find_element(By.ID, "submit")
     submit_button.click()
 
