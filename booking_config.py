@@ -8,6 +8,7 @@ DEFAULT_SLOTS = [
     {"day": "Tuesday", "check_time": "19:00:00", "book_time": "20:00:00"},
     {"day": "Friday", "check_time": "19:00:00", "book_time": "20:00:00"},
 ]
+DEFAULT_PREFERENCES = {"run_in_background": False}
 HOUR_ONLY_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):00$")
 HOUR_ONLY_WITH_SECONDS_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):00:00$")
 
@@ -65,7 +66,30 @@ def load_schedule() -> List[Dict[str, str]]:
 
 def save_schedule(slots: List[Dict[str, str]]) -> None:
     cleaned = _clean_slots(slots) or list(DEFAULT_SLOTS)
-    payload: Dict[str, Any] = {"slots": cleaned}
+    payload: Dict[str, Any] = _load_payload()
+    payload["slots"] = cleaned
+    with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+
+
+def load_preferences() -> Dict[str, Any]:
+    payload = _load_payload()
+    preferences = payload.get("preferences")
+    if not isinstance(preferences, dict):
+        return dict(DEFAULT_PREFERENCES)
+    merged = dict(DEFAULT_PREFERENCES)
+    merged.update(preferences)
+    return merged
+
+
+def save_preferences(preferences: Dict[str, Any]) -> None:
+    payload: Dict[str, Any] = _load_payload()
+    stored = dict(DEFAULT_PREFERENCES)
+    stored.update(preferences)
+    payload["preferences"] = stored
+    if "slots" not in payload:
+        payload["slots"] = list(DEFAULT_SLOTS)
     with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")
