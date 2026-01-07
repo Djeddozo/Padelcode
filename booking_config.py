@@ -37,14 +37,21 @@ def _clean_slots(slots: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return cleaned_slots
 
 
-def load_schedule() -> List[Dict[str, str]]:
+def _load_payload() -> Dict[str, Any]:
     if not os.path.exists(CONFIG_PATH):
-        return list(DEFAULT_SLOTS)
+        return {}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
     except (OSError, json.JSONDecodeError):
-        return list(DEFAULT_SLOTS)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def load_schedule() -> List[Dict[str, str]]:
+    payload = _load_payload()
     slots = payload.get("slots")
     if not isinstance(slots, list):
         return list(DEFAULT_SLOTS)
