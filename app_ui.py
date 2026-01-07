@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QDialog,
+    QDialogButtonBox,
     QSystemTrayIcon,
     QTableWidget,
     QVBoxLayout,
@@ -180,10 +182,52 @@ class MainWindow(QMainWindow):
             self.scheduler.stop()
         else:
             try:
-                self.scheduler.start()
+                email, password = self._get_credentials()
+                self.scheduler.start(email, password)
             except ValueError as exc:
                 QMessageBox.warning(self, "Missing credentials", str(exc))
         self._update_ui()
+
+    def _get_credentials(self) -> tuple[str, str]:
+        email = os.getenv("USC_EMAIL", "").strip()
+        password = os.getenv("USC_PASSWORD", "").strip()
+        if email and password:
+            return email, password
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Missing credentials")
+        dialog.setModal(True)
+
+        email_label = QLabel("Email")
+        email_edit = QLineEdit()
+        email_edit.setPlaceholderText("you@example.com")
+
+        password_label = QLabel("Password")
+        password_edit = QLineEdit()
+        password_edit.setEchoMode(QLineEdit.Password)
+
+        form_layout = QVBoxLayout()
+        form_layout.addWidget(email_label)
+        form_layout.addWidget(email_edit)
+        form_layout.addWidget(password_label)
+        form_layout.addWidget(password_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout = QVBoxLayout(dialog)
+        layout.addLayout(form_layout)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
+
+        email = email_edit.text().strip()
+        password = password_edit.text().strip()
+        if not email or not password:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
+        return email, password
 
     def _load_schedule(self) -> None:
         self.schedule_table.setRowCount(0)
