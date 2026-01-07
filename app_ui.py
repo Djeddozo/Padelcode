@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -27,6 +26,7 @@ from booking_scheduler import BookingScheduler
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+HOUR_VALUES = [f"{hour:02d}:00" for hour in range(24)]
 
 
 class MainWindow(QMainWindow):
@@ -190,6 +190,43 @@ class MainWindow(QMainWindow):
         for slot in load_schedule():
             self._add_schedule_row(slot)
 
+    @staticmethod
+    def _format_hour_display(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.strip()
+        if cleaned.count(":") == 2:
+            hour, minute, second = cleaned.split(":")
+            if minute == "00" and second == "00" and hour.isdigit():
+                hour_value = int(hour)
+                if 0 <= hour_value <= 23:
+                    return f"{hour_value:02d}:00"
+        if cleaned.count(":") == 1:
+            hour, minute = cleaned.split(":")
+            if minute == "00" and hour.isdigit():
+                hour_value = int(hour)
+                if 0 <= hour_value <= 23:
+                    return f"{hour_value:02d}:00"
+        return None
+
+    def _format_hour_for_save(self, value: str) -> str | None:
+        display_value = self._format_hour_display(value)
+        if display_value is None:
+            return None
+        return f"{display_value}:00"
+
+    def _build_time_combo(self, slot: dict | None, key: str, default: str) -> QComboBox:
+        time_combo = QComboBox()
+        time_combo.addItems(HOUR_VALUES)
+        saved_value = slot.get(key) if slot else None
+        display_value = self._format_hour_display(saved_value)
+        if display_value in HOUR_VALUES:
+            time_combo.setCurrentText(display_value)
+        elif default in HOUR_VALUES:
+            time_combo.setCurrentText(default)
+        time_combo.setToolTip("Select an hour (HH:00)")
+        return time_combo
+
     def _add_schedule_row(self, slot: dict | None = None) -> None:
         row = self.schedule_table.rowCount()
         self.schedule_table.insertRow(row)
@@ -201,15 +238,11 @@ class MainWindow(QMainWindow):
             day_combo.setCurrentText(day_value)
         self.schedule_table.setCellWidget(row, 0, day_combo)
 
-        check_time_edit = QLineEdit()
-        check_time_edit.setPlaceholderText("19:59:00")
-        check_time_edit.setText(slot.get("check_time") if slot else "")
-        self.schedule_table.setCellWidget(row, 1, check_time_edit)
+        check_time_combo = self._build_time_combo(slot, "check_time", "19:00")
+        self.schedule_table.setCellWidget(row, 1, check_time_combo)
 
-        book_time_edit = QLineEdit()
-        book_time_edit.setPlaceholderText("20:00:00")
-        book_time_edit.setText(slot.get("book_time") if slot else "")
-        self.schedule_table.setCellWidget(row, 2, book_time_edit)
+        book_time_combo = self._build_time_combo(slot, "book_time", "20:00")
+        self.schedule_table.setCellWidget(row, 2, book_time_combo)
 
     def _remove_schedule_rows(self) -> None:
         selected_rows = {index.row() for index in self.schedule_table.selectionModel().selectedRows()}
@@ -220,15 +253,15 @@ class MainWindow(QMainWindow):
         slots: list[dict[str, str]] = []
         for row in range(self.schedule_table.rowCount()):
             day_combo = self.schedule_table.cellWidget(row, 0)
-            check_time_edit = self.schedule_table.cellWidget(row, 1)
-            book_time_edit = self.schedule_table.cellWidget(row, 2)
+            check_time_combo = self.schedule_table.cellWidget(row, 1)
+            book_time_combo = self.schedule_table.cellWidget(row, 2)
             if not isinstance(day_combo, QComboBox):
                 continue
-            if not isinstance(check_time_edit, QLineEdit) or not isinstance(book_time_edit, QLineEdit):
+            if not isinstance(check_time_combo, QComboBox) or not isinstance(book_time_combo, QComboBox):
                 continue
             day = day_combo.currentText().strip()
-            check_time = check_time_edit.text().strip()
-            book_time = book_time_edit.text().strip()
+            check_time = self._format_hour_for_save(check_time_combo.currentText())
+            book_time = self._format_hour_for_save(book_time_combo.currentText())
             if not day or not check_time or not book_time:
                 continue
             slots.append({"day": day, "check_time": check_time, "book_time": book_time})

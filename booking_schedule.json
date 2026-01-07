@@ -2,12 +2,12 @@
   "slots": [
     {
       "day": "Tuesday",
-      "check_time": "19:59:00",
+      "check_time": "19:00:00",
       "book_time": "20:00:00"
     },
     {
       "day": "Friday",
-      "check_time": "19:59:00",
+      "check_time": "19:00:00",
       "book_time": "20:00:00"
     }
   ]
