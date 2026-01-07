@@ -11,6 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
+from booking_config import load_schedule
+
 WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
@@ -172,8 +174,15 @@ class BookingScheduler:
         get_credentials()
         self._stop_event.clear()
         schedule.clear()
-        schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00"))
-        schedule.every().friday.at("19:59:00").do(lambda: fill_form("20:00:00"))
+        schedule_slots = load_schedule()
+        for slot in schedule_slots:
+            day_key = slot["day"].strip().lower()
+            check_time = slot["check_time"]
+            book_time = slot["book_time"]
+            day_schedule = getattr(schedule.every(), day_key, None)
+            if day_schedule is None:
+                continue
+            day_schedule.at(check_time).do(lambda target=book_time: fill_form(target))
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._running = True
         self._thread.start()
