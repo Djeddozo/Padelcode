@@ -2,6 +2,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from typing import Callable, Optional
 
 import schedule
 from selenium import webdriver
@@ -13,10 +14,29 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from booking_config import load_schedule
 
-WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def fill_form(target_time: str, stop_event: threading.Event) -> None:
+def get_credentials() -> tuple[str, str]:
+    email = os.environ.get("USC_EMAIL")
+    password = os.environ.get("USC_PASSWORD")
+    missing = [name for name, value in (("USC_EMAIL", email), ("USC_PASSWORD", password)) if not value]
+    if missing:
+        missing_vars = ", ".join(missing)
+        raise ValueError(
+            f"Missing credentials: {missing_vars}. Please set USC_EMAIL and USC_PASSWORD in the environment."
+        )
+    return email, password
+
+
+def fill_form(
+    target_time: str,
+    stop_event: threading.Event,
+    target_day: str,
+    on_complete: Optional[Callable[[str, str], None]] = None,
+) -> None:
+    email, password = get_credentials()
+
     # Setup the WebDriver
     options = webdriver.ChromeOptions()
     options.headless = False
@@ -82,8 +102,8 @@ def fill_form(target_time: str, stop_event: threading.Event) -> None:
     padel_button.click()
 
     # Create variables before booking for speed
-    weekday = datetime.today().weekday()
-    target_day_button = f'[data-test-id="day-button"][data-test-id-day-button-number="{weekday}"]'
+    target_day_index = DAY_NAMES.index(target_day)
+    target_day_button = f'[data-test-id="day-button"][data-test-id-day-button-number="{target_day_index}"]'
 
     # List guests
     email_list = [
@@ -158,9 +178,11 @@ def fill_form(target_time: str, stop_event: threading.Event) -> None:
             print(f"End booking: {datetime.now()}")
 
             # Nice print for booking
-            day = datetime.today() + timedelta(days=7)
+            today = datetime.today()
+            day_offset = (target_day_index - today.weekday()) % 7 or 7
+            day = today + timedelta(days=day_offset)
             day_str = day.strftime("%d-%m-%Y")
-            print(f"Booked {WEEKDAY_CONVERT[weekday]} {day_str} at {target_time}")
+            print(f"Booked {target_day} {day_str} at {target_time}")
 
             # Wait for booking to be finished
             if check_stop():
@@ -169,6 +191,8 @@ def fill_form(target_time: str, stop_event: threading.Event) -> None:
 
             # Close the browser, stop current run
             driver.quit()
+            if on_complete:
+                on_complete(target_day, target_time)
             break
 
         # Refresh often to check if booking opens
@@ -178,10 +202,11 @@ def fill_form(target_time: str, stop_event: threading.Event) -> None:
 
 
 class BookingScheduler:
-    def __init__(self) -> None:
+    def __init__(self, on_complete: Optional[Callable[[str, str], None]] = None) -> None:
         self._stop_event = threading.Event()
         self._thread = None
         self._running = False
+        self._on_complete = on_complete
 
     def start(self) -> None:
         if self._running:
@@ -189,8 +214,23 @@ class BookingScheduler:
         get_credentials()
         self._stop_event.clear()
         schedule.clear()
-        schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
-        schedule.every().friday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
+        for slot in load_schedule():
+            day = slot.get("day")
+            book_time = slot.get("book_time")
+            if day not in DAY_NAMES or not book_time:
+                continue
+            try:
+                book_dt = datetime.strptime(book_time, "%H:%M:%S")
+            except ValueError:
+                continue
+            check_time = (book_dt - timedelta(minutes=1)).strftime("%H:%M:%S")
+            run_day = DAY_NAMES[(DAY_NAMES.index(day) - 6) % 7].lower()
+            schedule_day = getattr(schedule.every(), run_day)
+            schedule_day.at(check_time).do(
+                lambda target=book_time, target_day=day: fill_form(
+                    target, self._stop_event, target_day, self._on_complete
+                )
+            )
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._running = True
         self._thread.start()
