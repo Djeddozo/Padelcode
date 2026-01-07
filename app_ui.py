@@ -7,26 +7,29 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
+    QDialog,
+    QDialogButtonBox,
     QSystemTrayIcon,
     QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from booking_config import load_schedule, save_schedule
+from booking_config import load_preferences, load_schedule, save_preferences, save_schedule
 from booking_scheduler import BookingScheduler
 
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+HOUR_VALUES = [f"{hour:02d}:00" for hour in range(24)]
 
 
 class MainWindow(QMainWindow):
@@ -47,43 +50,45 @@ class MainWindow(QMainWindow):
     def _init_ui(self) -> None:
         central = QWidget()
         central.setObjectName("central")
+        central.setAutoFillBackground(True)
+        palette = central.palette()
+        palette.setColor(QPalette.Window, QColor("#0b1221"))
+        central.setPalette(palette)
         self.setCentralWidget(central)
 
-        background_path = os.path.join(ASSETS_DIR, "background_usc.svg")  # CHANGED
-        background_rule = ""  # CHANGED
-        if os.path.exists(background_path):  # CHANGED
-            background_rule = f'background-image: url("{background_path}");'  # CHANGED
-        central.setStyleSheet(  # CHANGED
-            f"""
-            QWidget#central {{
-                {background_rule}
-                background-position: center;
-                background-repeat: no-repeat;
-                background-color: #0b1221;
-            }}
-            """
-        )
+        self.background_label = QLabel(central)
+        self.background_label.setAlignment(Qt.AlignCenter)
+        self.background_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self._background_pixmap = QPixmap()
+        background_path = self._asset_path("background_usc.svg")
+        if os.path.exists(background_path):
+            self._background_pixmap.load(background_path)
 
         title = QLabel("USC Padel Booking Controller")
         title.setStyleSheet("color: #ffffff; font-size: 22px; font-weight: 700;")
         title.setAlignment(Qt.AlignCenter)
 
-        robot_label = QLabel()  # CHANGED
-        robot_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
-        robot_pixmap = QPixmap()  # CHANGED
-        if os.path.exists(robot_path):  # CHANGED
-            robot_pixmap.load(robot_path)  # CHANGED
-        if robot_pixmap.isNull():  # CHANGED
-            robot_label.setText("USC Padel Booking")  # CHANGED
-            robot_label.setStyleSheet("color: #ffffff; font-size: 16px;")  # CHANGED
-        else:  # CHANGED
-            robot_label.setPixmap(  # CHANGED
-                robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)  # CHANGED
-            )  # CHANGED
+        robot_label = QLabel()
+        robot_path = self._asset_path("robot_racket.svg")
+        robot_pixmap = QPixmap()
+        if os.path.exists(robot_path):
+            robot_pixmap.load(robot_path)
+        if robot_pixmap.isNull():
+            robot_label.setText("USC Padel Booking")
+            robot_label.setStyleSheet("color: #ffffff; font-size: 16px;")
+        else:
+            robot_label.setPixmap(
+                robot_pixmap.scaled(220, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
         robot_label.setAlignment(Qt.AlignCenter)
 
         self.run_background_checkbox = QCheckBox("Run in background")
         self.run_background_checkbox.setStyleSheet("color: #ffffff; font-size: 16px;")
+        self.run_background_checkbox.setChecked(
+            load_preferences().get("run_in_background", False)
+        )
+        self.run_background_checkbox.stateChanged.connect(self._save_background_preference)
 
         self.start_stop_button = QPushButton("Start booking")
         self.start_stop_button.setFixedWidth(200)
@@ -137,17 +142,28 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(controls_layout, stretch=1)
         content_layout.setContentsMargins(40, 20, 40, 40)
 
-        main_layout = QVBoxLayout(central)
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
         main_layout.addWidget(title)
         main_layout.addLayout(content_layout)
         main_layout.addWidget(schedule_group)
 
+        overlay_layout = QGridLayout(central)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.addWidget(self.background_label, 0, 0)
+        overlay_layout.addWidget(content_widget, 0, 0)
+
+        self._update_background_pixmap()
         self._load_schedule()
 
     def _init_tray(self) -> None:
-        icon_path = os.path.join(ASSETS_DIR, "robot_racket.svg")  # CHANGED
-        tray_icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()  # CHANGED
-        self.tray_icon = QSystemTrayIcon(tray_icon, self)  # CHANGED
+        icon_path = self._asset_path("racket.svg")
+        if not os.path.exists(icon_path):
+            icon_path = self._asset_path("racket.png")
+        if not os.path.exists(icon_path):
+            icon_path = self._asset_path("robot_racket.svg")
+        tray_icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        self.tray_icon = QSystemTrayIcon(tray_icon, self)
         self.tray_icon.setToolTip("USC Padel Booking")
 
         self.tray_menu = QMenu()
@@ -183,15 +199,97 @@ class MainWindow(QMainWindow):
             self.scheduler.stop()
         else:
             try:
-                self.scheduler.start()
+                email, password = self._get_credentials()
+                self.scheduler.start(email, password)
             except ValueError as exc:
                 QMessageBox.warning(self, "Missing credentials", str(exc))
+            else:
+                if self.run_background_checkbox.isChecked():
+                    self._hide_to_tray(show_message=True)
         self._update_ui()
+
+    def _get_credentials(self) -> tuple[str, str]:
+        email = os.getenv("USC_EMAIL", "").strip()
+        password = os.getenv("USC_PASSWORD", "").strip()
+        if email and password:
+            return email, password
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Missing credentials")
+        dialog.setModal(True)
+
+        email_label = QLabel("Email")
+        email_edit = QLineEdit()
+        email_edit.setPlaceholderText("you@example.com")
+
+        password_label = QLabel("Password")
+        password_edit = QLineEdit()
+        password_edit.setEchoMode(QLineEdit.Password)
+
+        form_layout = QVBoxLayout()
+        form_layout.addWidget(email_label)
+        form_layout.addWidget(email_edit)
+        form_layout.addWidget(password_label)
+        form_layout.addWidget(password_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        layout = QVBoxLayout(dialog)
+        layout.addLayout(form_layout)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
+
+        email = email_edit.text().strip()
+        password = password_edit.text().strip()
+        if not email or not password:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
+        return email, password
 
     def _load_schedule(self) -> None:
         self.schedule_table.setRowCount(0)
         for slot in load_schedule():
             self._add_schedule_row(slot)
+
+    @staticmethod
+    def _format_hour_display(value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = value.strip()
+        if cleaned.count(":") == 2:
+            hour, minute, second = cleaned.split(":")
+            if minute == "00" and second == "00" and hour.isdigit():
+                hour_value = int(hour)
+                if 0 <= hour_value <= 23:
+                    return f"{hour_value:02d}:00"
+        if cleaned.count(":") == 1:
+            hour, minute = cleaned.split(":")
+            if minute == "00" and hour.isdigit():
+                hour_value = int(hour)
+                if 0 <= hour_value <= 23:
+                    return f"{hour_value:02d}:00"
+        return None
+
+    def _format_hour_for_save(self, value: str) -> str | None:
+        display_value = self._format_hour_display(value)
+        if display_value is None:
+            return None
+        return f"{display_value}:00"
+
+    def _build_time_combo(self, slot: dict | None, key: str, default: str) -> QComboBox:
+        time_combo = QComboBox()
+        time_combo.addItems(HOUR_VALUES)
+        saved_value = slot.get(key) if slot else None
+        display_value = self._format_hour_display(saved_value)
+        if display_value in HOUR_VALUES:
+            time_combo.setCurrentText(display_value)
+        elif default in HOUR_VALUES:
+            time_combo.setCurrentText(default)
+        time_combo.setToolTip("Select an hour (HH:00)")
+        return time_combo
 
     def _add_schedule_row(self, slot: dict | None = None) -> None:
         row = self.schedule_table.rowCount()
@@ -204,15 +302,11 @@ class MainWindow(QMainWindow):
             day_combo.setCurrentText(day_value)
         self.schedule_table.setCellWidget(row, 0, day_combo)
 
-        check_time_edit = QLineEdit()
-        check_time_edit.setPlaceholderText("19:59:00")
-        check_time_edit.setText(slot.get("check_time") if slot else "")
-        self.schedule_table.setCellWidget(row, 1, check_time_edit)
+        check_time_combo = self._build_time_combo(slot, "check_time", "19:00")
+        self.schedule_table.setCellWidget(row, 1, check_time_combo)
 
-        book_time_edit = QLineEdit()
-        book_time_edit.setPlaceholderText("20:00:00")
-        book_time_edit.setText(slot.get("book_time") if slot else "")
-        self.schedule_table.setCellWidget(row, 2, book_time_edit)
+        book_time_combo = self._build_time_combo(slot, "book_time", "20:00")
+        self.schedule_table.setCellWidget(row, 2, book_time_combo)
 
     def _remove_schedule_rows(self) -> None:
         selected_rows = {index.row() for index in self.schedule_table.selectionModel().selectedRows()}
@@ -223,21 +317,34 @@ class MainWindow(QMainWindow):
         slots: list[dict[str, str]] = []
         for row in range(self.schedule_table.rowCount()):
             day_combo = self.schedule_table.cellWidget(row, 0)
-            check_time_edit = self.schedule_table.cellWidget(row, 1)
-            book_time_edit = self.schedule_table.cellWidget(row, 2)
+            check_time_combo = self.schedule_table.cellWidget(row, 1)
+            book_time_combo = self.schedule_table.cellWidget(row, 2)
             if not isinstance(day_combo, QComboBox):
                 continue
-            if not isinstance(check_time_edit, QLineEdit) or not isinstance(book_time_edit, QLineEdit):
+            if not isinstance(check_time_combo, QComboBox) or not isinstance(book_time_combo, QComboBox):
                 continue
             day = day_combo.currentText().strip()
-            check_time = check_time_edit.text().strip()
-            book_time = book_time_edit.text().strip()
+            check_time = self._format_hour_for_save(check_time_combo.currentText())
+            book_time = self._format_hour_for_save(book_time_combo.currentText())
             if not day or not check_time or not book_time:
                 continue
             slots.append({"day": day, "check_time": check_time, "book_time": book_time})
         if not slots:
             slots = load_schedule()
         save_schedule(slots)
+
+    def _save_background_preference(self) -> None:
+        save_preferences({"run_in_background": self.run_background_checkbox.isChecked()})
+
+    def _hide_to_tray(self, show_message: bool = False) -> None:
+        self.hide()
+        if show_message and QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray_icon.showMessage(
+                "USC Padel Booking",
+                "App is still running in the background.",
+                QSystemTrayIcon.Information,
+                2000,
+            )
 
     def _show_window(self) -> None:
         self.showNormal()
@@ -255,16 +362,30 @@ class MainWindow(QMainWindow):
             else:
                 self._show_window()
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_background_pixmap()
+
+    def _asset_path(self, filename: str) -> str:
+        return os.path.abspath(os.path.join(ASSETS_DIR, filename))
+
+    def _update_background_pixmap(self) -> None:
+        if self._background_pixmap.isNull():
+            self.background_label.clear()
+            return
+        target_size = self.centralWidget().size()
+        scaled = self._background_pixmap.scaled(
+            target_size,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        self.background_label.setPixmap(scaled)
+        self.background_label.setMinimumSize(target_size)
+
     def closeEvent(self, event) -> None:
         if self.run_background_checkbox.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
             event.ignore()
-            self.hide()
-            self.tray_icon.showMessage(
-                "USC Padel Booking",
-                "App is still running in the background.",
-                QSystemTrayIcon.Information,
-                2000,
-            )
+            self._hide_to_tray(show_message=True)
             return
         self.scheduler.stop()
         event.accept()
@@ -285,7 +406,7 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)  # CHANGED
-    app.setQuitOnLastWindowClosed(True)  # CHANGED
+    app.setQuitOnLastWindowClosed(False)  # CHANGED
     window = MainWindow()  # CHANGED
     window.show()  # CHANGED
     window.raise_()  # CHANGED

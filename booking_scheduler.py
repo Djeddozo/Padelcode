@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -208,10 +207,11 @@ class BookingScheduler:
         self._running = False
         self._on_complete = on_complete
 
-    def start(self) -> None:
+    def start(self, email: str, password: str) -> None:
         if self._running:
             return
-        get_credentials()
+        if not email or not password:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
         self._stop_event.clear()
         schedule.clear()
         for slot in load_schedule():
