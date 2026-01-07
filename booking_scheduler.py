@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -11,12 +10,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-from booking_config import load_schedule
-
 WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 
-def fill_form(target_time: str, stop_event: threading.Event) -> None:
+def fill_form(
+    target_time: str,
+    stop_event: threading.Event,
+    email: str,
+    password: str,
+) -> None:
     # Setup the WebDriver
     options = webdriver.ChromeOptions()
     options.headless = False
@@ -183,14 +185,19 @@ class BookingScheduler:
         self._thread = None
         self._running = False
 
-    def start(self) -> None:
+    def start(self, email: str, password: str) -> None:
         if self._running:
             return
-        get_credentials()
+        if not email or not password:
+            raise ValueError("Missing credentials. Provide USC_EMAIL and USC_PASSWORD or enter them in the dialog.")
         self._stop_event.clear()
         schedule.clear()
-        schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
-        schedule.every().friday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
+        schedule.every().tuesday.at("19:59:00").do(
+            lambda: fill_form("20:00:00", self._stop_event, email, password)
+        )
+        schedule.every().friday.at("19:59:00").do(
+            lambda: fill_form("20:00:00", self._stop_event, email, password)
+        )
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._running = True
         self._thread.start()
