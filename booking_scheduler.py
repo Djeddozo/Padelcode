@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -9,6 +10,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+
+from booking_config import load_schedule
 
 WEEKDAY_CONVERT = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
@@ -49,9 +52,9 @@ def fill_form(target_time: str, stop_event: threading.Event) -> None:
 
     # Log in by filling the fields and clicking login
     email_field = driver.find_element(By.ID, "email")
-    email_field.send_keys("thomas.m.jansz@gmail.com")
+    email_field.send_keys(email)
     email_field = driver.find_element(By.ID, "password")
-    email_field.send_keys("U%Z&nGwUtJw%mksC7FwL")
+    email_field.send_keys(password)
     submit_button = driver.find_element(By.ID, "submit")
     submit_button.click()
 
@@ -183,6 +186,7 @@ class BookingScheduler:
     def start(self) -> None:
         if self._running:
             return
+        get_credentials()
         self._stop_event.clear()
         schedule.clear()
         schedule.every().tuesday.at("19:59:00").do(lambda: fill_form("20:00:00", self._stop_event))
